@@ -1,11 +1,11 @@
 package entry
 
 type RvoteResult struct {
-	term        uint64
+	term        int64
 	voteGranted bool
 }
 
-func (r *RvoteResult) SetTerm(val uint64) {
+func (r *RvoteResult) SetTerm(val int64) {
 	r.term = val
 }
 
@@ -13,7 +13,7 @@ func (r *RvoteResult) SetVoteGranted(val bool) {
 	r.voteGranted = val
 }
 
-func (r *RvoteResult) Term() uint64 {
+func (r *RvoteResult) Term() int64 {
 	return r.term
 }
 

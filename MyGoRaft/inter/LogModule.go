@@ -1,10 +1,11 @@
 package inter
 
-type LogModule interface {
+import "htl/myraft.com/entry"
 
-	//write(Logentry logentry)
-	//LogEntry read(long index)
-	//removeOnstartIndex(long startIndex)
-	//LogEntry getLast()
-	//Long getLastIndex();
+type LogModule interface {
+	write(Logentry entry.LogEntry)
+	Read(index int64)
+	removeOnstartIndex(startIndex int64)
+	GetLast() *entry.LogEntry
+	GetLastIndex() int64
 }

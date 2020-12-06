@@ -12,6 +12,8 @@ import (
 	raft_client "htl/myraft.com/raft.client"
 	"htl/myraft.com/rpc"
 	"math/rand"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,10 +40,10 @@ type DefaultNode struct {
 	commitIndex uint64
 	//最后被应用到状态机的日志条目（初始化0 持续递增）
 	lastApplied int
-	//对于每个服务器需要发送给它的下一条日志的索引号，初始化领导人需要+1
-	nextIndexes map[command.Peer]uint64
+	//对于每个服务器需要发送给它的下一条日志的索引号，初始化的时候领导人的值需要+1
+	nextIndexes map[command.Peer]int64
 	//对于follower服务器已经复制给他的日志最大索引值
-	matchIndexes map[command.Peer]uint64
+	matchIndexes map[command.Peer]int64
 	//node节点是否已经启动
 	started bool
 	//节点配置
@@ -62,7 +64,7 @@ type DefaultNode struct {
 	//
 	//
 	//inter.Node
-	raftchannelqueue channs.RaftChannelPool
+	raftchannelpool channs.RaftChannelPool
 }
 
 func (node *DefaultNode) HandlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult {
@@ -91,6 +93,7 @@ type HeartBeatTask struct {
 	node DefaultNode
 }
 
+//raft节点的心跳实现
 func (h *HeartBeatTask) HeartBeatTask() {
 	if h.node.status != command.LEADER {
 		return
@@ -103,7 +106,7 @@ func (h *HeartBeatTask) HeartBeatTask() {
 	}
 
 	h.node.preHeartBeatTime = time.Now()
-	fmt.Println("nextindex")
+	fmt.Println("nextindex %s", h.node.nextIndexes[*h.node.peerset.GetSelf()])
 
 	for x := h.node.peerset.GetPeersWithOutSelf().Front(); x.Value != nil; x.Next() {
 		p := x.Value.(command.Peer)
@@ -115,7 +118,7 @@ func (h *HeartBeatTask) HeartBeatTask() {
 		request.SetCmd(rpc.A_ENTRIS)
 		request.SetObj(param)
 		request.SetUrl(p.GetAddr())
-		channs.RaftChannelPools.AddTasks(func() error {
+		channs.NewRunnable(func() error {
 			response := h.node.RpcClient.Send(*request)
 			result := response.GetResult().(entry.AppendEntryResult)
 			term := result.GetTerm()
@@ -126,62 +129,120 @@ func (h *HeartBeatTask) HeartBeatTask() {
 				h.node.status = command.FOLLOWER
 			}
 			return nil
-
 		})
-
+		h.node.raftchannelpool.TaskPool = append(h.node.raftchannelpool.TaskPool)
 	}
 
 }
 
-func (h *HeartBeatTask) ElectionTask() {
+//raft节点投票选举
+func (node *DefaultNode) ElectionTask() {
 
 	task := &channs.ChannelTask{}
 	task.Runnable.Runnablefunc = func() error {
 		//如果节点状态是leader则返回
-		if h.node.status == command.LEADER {
+		if node.status == command.LEADER {
 			return nil
 		}
 		current := time.Now()
-		h.node.electionSpanTime = h.node.electionSpanTime + rand.Int63n(50)
-		if current.After(h.node.preHeartBeatTime.Add(time.Duration(int64(time.Millisecond) * h.node.electionSpanTime))) {
+		node.electionSpanTime = node.electionSpanTime + rand.Int63n(50)
+		if current.After(node.preHeartBeatTime.Add(time.Duration(int64(time.Millisecond) * node.electionSpanTime))) {
 			return nil
 		}
-		h.node.status = command.CANDIDATE
+		node.status = command.CANDIDATE
 		fmt.Println("warnning:node {} will become CANDIDATE and start election leader, current term : [{}], LastEntry : [{}] ")
-		h.node.preElectionTime = h.node.preElectionTime.
+		node.preElectionTime = node.preElectionTime.
 			Add(time.Duration(int64(time.Millisecond) + 15*int64(time.Millisecond)))
-		h.node.currentTerm = h.node.currentTerm + 1
+		node.currentTerm = node.currentTerm + 1
 		//先把term+1
 		//推荐自己
-		h.node.voteFor = h.node.peerset.getAddr()
-		peers := h.node.peerset.GetPeersWithOutSelf()
+		node.voteFor = node.peerset.GetSelf().GetAddr()
+		peers := node.peerset.GetPeersWithOutSelf()
 		fmt.Println("peers size:", peers.Len())
 		futureArray := make([]*channs.ChannelTask, 0)
 		for i := peers.Front(); i != nil; i = i.Next() {
 			peer := i.Value.(command.Peer)
 			t := &channs.ChannelTask{
 				Callable: channs.NewCallable(func() (interface{}, error) {
-
 					lastTerm := int64(0)
-					lastLogEntry := h.node.logModule.getLast()
+					lastLogEntry := node.logModule.GetLast()
 					//获取最后一个日志的任期
 					if lastLogEntry != nil {
-						lastTerm = lastLogEntry.getTerm()
+						lastTerm = int64(lastLogEntry.GetTerm())
 					}
-
-					voteParam := vote.NewRvoteParam().SetTerm(h.node.currentTerm).SetCandidateId(h.node.peerset.getSelf().getAddr()).
-						SetLastLogIndex(h.node.logModule.getLastIndex()).SetLastLogTerm(lastTerm)
-
-					return "", nil
+					//创建投票参数以及请求
+					voteParam := vote.NewRvoteParam().SetTerm(node.currentTerm).SetCandidateId(node.peerset.GetSelf().GetAddr()).
+						SetLastLogIndex(node.logModule.GetLastIndex()).SetLastLogTerm(lastTerm)
+					request := rpc.NewRequest().SetCmd(rpc.R_VOTE).SetObj(voteParam).SetUrl(peer.GetAddr())
+					response := node.RpcClient.Send(*request)
+					return response, nil
 				}, context.Background()),
 			}
 			futureArray = append(futureArray, t)
+			var succeed int64
+
+			wg := &sync.WaitGroup{}
+			wg.Add(len(futureArray))
+			for _, futrue := range futureArray {
+				//异步执行节点间投票
+				go func() {
+					response := node.raftchannelpool.Get(*futrue)
+					voteResult := response.GetResult().(entry.RvoteResult)
+					//如果集群的节点投票给我，则原子计数器+1
+					if voteResult.VoteGranted() && response.Err == nil {
+						atomic.AddInt64(&succeed, 1)
+					} else {
+						resTerm := response.GetResult().(*entry.RvoteResult).Term()
+						if resTerm >= node.currentTerm {
+							node.currentTerm = resTerm
+						}
+					}
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			fmt.Printf("node %s maybe become leader , success count = {} , status : {}", node.peerset.GetSelf(), succeed, node.status)
+			// 如果投票期间,有其他服务器发送 appendEntry , 就可能从CANDIDATE变成 FOLLOWER ,这时,应该停止.
+			if node.status == command.FOLLOWER {
+				return nil
+			}
+
+			if int(succeed) >= peers.Len()/2 {
+				fmt.Printf("warning: node %s become leader", node.peerset.GetSelf())
+				node.status = command.LEADER
+				node.peerset.SetLeader(node.peerset.GetSelf())
+				node.voteFor = ""
+				node.becomeLeaderToDoThing()
+			} else {
+				node.voteFor = ""
+			}
+
 		}
 		//把任务批量插入到channel pool中
-		h.node.raftchannelqueue.TaskPool = append(h.node.raftchannelqueue.TaskPool, futureArray...)
-
 		return nil
 	}
-	h.node.raftchannelqueue.TaskPool = append(h.node.raftchannelqueue.TaskPool, task)
 
+}
+
+func (node *DefaultNode) becomeLeaderToDoThing() {
+	node.nextIndexes = make(map[command.Peer]int64)
+	node.matchIndexes = make(map[command.Peer]int64)
+
+	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer.Next() {
+		node.nextIndexes[peer.Value.(command.Peer)] = (node.logModule.GetLastIndex() + 1)
+		node.matchIndexes[peer.Value.(command.Peer)] = 0
+	}
+}
+
+func (node *DefaultNode) handlerRequestVote(vote vote.RvoteParam) *entry.RvoteResult {
+	return nil
+}
+func (node *DefaultNode) handlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult {
+	return nil
+}
+func (node *DefaultNode) handlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
+	return nil
+}
+func (node *DefaultNode) redirect(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
+	return nil
 }

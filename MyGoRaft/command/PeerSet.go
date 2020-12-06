@@ -8,7 +8,7 @@ import (
 type PeerSet struct {
 	list *list.List
 	//volatile peer
-	leader Peer
+	leader *Peer
 	//volatile
 	self *Peer
 }
@@ -57,9 +57,9 @@ func (p *PeerSet) GetPeersWithOutSelf() *list.List {
 }
 
 func (p *PeerSet) GetLeader() Peer {
-	return p.leader
+	return *p.leader
 }
 
-func (p *PeerSet) SetLeader(value Peer) {
+func (p *PeerSet) SetLeader(value *Peer) {
 	p.leader = value
 }

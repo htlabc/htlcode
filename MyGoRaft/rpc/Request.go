@@ -12,16 +12,25 @@ type Request struct {
 	URL string
 }
 
-func (r *Request) SetCmd(value int) {
+func (r *Request) SetCmd(value int) *Request {
 	r.CMD = value
+	return r
 }
 
-func (r *Request) SetUrl(value string) {
+func NewRequest() *Request {
+	return &Request{}
+}
+
+func (r *Request) SetUrl(value string) *Request {
 	r.URL = value
+	return r
+
 }
 
-func (r *Request) SetObj(value interface{}) {
+func (r *Request) SetObj(value interface{}) *Request {
 	r.OBJ = value
+	return r
+
 }
 
 func (r *Request) GetObj() interface{} {
@@ -30,8 +39,10 @@ func (r *Request) GetObj() interface{} {
 
 func (r *Request) GetUrl() string {
 	return r.URL
+
 }
 
 func (r *Request) GetCmd() int {
 	return r.CMD
+
 }

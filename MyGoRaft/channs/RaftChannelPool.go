@@ -43,7 +43,11 @@ type Callable struct {
 
 type CallableResult struct {
 	result interface{}
-	err    error
+	Err    error
+}
+
+func (c *CallableResult) GetResult() interface{} {
+	return c.result
 }
 
 func (c *ChannelTask) execute() error {
@@ -54,10 +58,10 @@ func (c *ChannelTask) execute() error {
 	if c.Callable != nil {
 		result, err := c.Callable.callableFunc()
 		c.Callable.callbaleResult.result = result
-		c.Callable.callbaleResult.err = err
+		c.Callable.callbaleResult.Err = err
 		c.Callable.ctx.Done()
-		if c.Callable.callbaleResult.err != nil {
-			return c.Callable.callbaleResult.err
+		if c.Callable.callbaleResult.Err != nil {
+			return c.Callable.callbaleResult.Err
 		}
 	}
 	return nil

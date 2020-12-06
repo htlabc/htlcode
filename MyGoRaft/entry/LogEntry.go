@@ -14,8 +14,12 @@ func (entry *LogEntry) GetCommand() *Command {
 	return entry.command
 }
 
+func (entry *LogEntry) GetTerm() uint64 {
+	return entry.term
+}
+
 func (logentry *LogEntry) LogEntry(entryBuilder LongEntryBuilder) *LogEntry {
-	return &LogEntry{index: entryBuilder.term, term: entryBuilder.term, command: entryBuilder.command}
+	return &LogEntry{index: entryBuilder.term, term: entryBuilder.term, command: &entryBuilder.command}
 }
 
 type LongEntryBuilder struct {
