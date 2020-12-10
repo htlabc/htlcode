@@ -11,6 +11,8 @@ import (
 	"sync"
 )
 
+var pre_db_table_text string = "raft_blotdb_"
+
 type DefaultStateMachine struct {
 	filename        string
 	dbDir           string
@@ -37,40 +39,44 @@ func NewDefaultStateMachine() *DefaultStateMachine {
 	return d
 }
 
-func (d *DefaultStateMachine) Apply(bucket string, log entry.LogEntry) {
+func (d *DefaultStateMachine) Apply(log *entry.LogEntry) {
 	var command *entry.Command = log.GetCommand()
 	if command != nil {
 		panic(errors.New("command can not be null, logEntry :"))
 	}
 
 	var key string = command.GetKey()
+	tablename := pre_db_table_text + key
 	d.machineDb.Update(func(tx *bolt.Tx) error {
-		b, _ := tx.CreateBucket([]byte(bucket))
+		b, _ := tx.CreateBucket([]byte(tablename))
 		data, _ := json.Marshal(log)
 		b.Put([]byte(key), data)
 		return nil
 	})
-
 }
 
-func (d *DefaultStateMachine) Get(bucket string, key string) entry.LogEntry {
+func (d *DefaultStateMachine) Get(key string) *entry.LogEntry {
 	var data string
 	var entry entry.LogEntry
+	tablename := pre_db_table_text + key
+
 	d.machineDb.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucket))
+
+		b := tx.Bucket([]byte(tablename))
 		if b != nil {
 			data = string(b.Get([]byte(key)))
 		}
-		json.Unmarshal([]byte(data), &entry)
+		json.Unmarshal([]byte(data), entry)
 		return nil
 	})
-	return entry
+	return &entry
 }
 
-func (d *DefaultStateMachine) GetString(bucket string, key string) string {
+func (d *DefaultStateMachine) GetString(key string) string {
 	var data string
+	tablename := pre_db_table_text + key
 	d.machineDb.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucket))
+		b := tx.Bucket([]byte(tablename))
 		if b != nil {
 			data = string(b.Get([]byte(key)))
 		}
@@ -79,9 +85,10 @@ func (d *DefaultStateMachine) GetString(bucket string, key string) string {
 	return data
 }
 
-func (d *DefaultStateMachine) SetString(bucket string, key string, value string) {
+func (d *DefaultStateMachine) SetString(key string, value string) {
+	tablename := pre_db_table_text + key
 	err := d.machineDb.Update(func(tx *bolt.Tx) error {
-		b, _ := tx.CreateBucket([]byte(bucket))
+		b, _ := tx.CreateBucket([]byte(tablename))
 		if b != nil {
 			err := b.Put([]byte(key), []byte(value))
 			if err != nil {

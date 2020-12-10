@@ -56,8 +56,8 @@ func (p *PeerSet) GetPeersWithOutSelf() *list.List {
 	return l
 }
 
-func (p *PeerSet) GetLeader() Peer {
-	return *p.leader
+func (p *PeerSet) GetLeader() *Peer {
+	return p.leader
 }
 
 func (p *PeerSet) SetLeader(value *Peer) {

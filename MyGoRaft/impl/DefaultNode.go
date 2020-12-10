@@ -235,14 +235,54 @@ func (node *DefaultNode) becomeLeaderToDoThing() {
 }
 
 func (node *DefaultNode) handlerRequestVote(vote vote.RvoteParam) *entry.RvoteResult {
-	return nil
+	fmt.Println("handlerRequestVote will be invoke, param info : {}", vote)
+	response := node.consensus.RequestVote(vote)
+	return &response
 }
 func (node *DefaultNode) handlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult {
-	return nil
+	fmt.Println("handlerAppendEntries will be invoke, param info : {}", param)
+	response := node.consensus.AppendEntries(param)
+	return &response
 }
-func (node *DefaultNode) handlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
-	return nil
-}
+
 func (node *DefaultNode) redirect(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
+	req := rpc.NewRequest().SetUrl(node.peerset.GetLeader().GetAddr()).SetObj(request).SetCmd(rpc.CLIENT_REQ)
+	response := node.RpcClient.Send(*req)
+	return response.GetResult().(*raft_client.ClientKVAck)
+}
+
+/**
+ * 客户端的每一个请求都包含一条被复制状态机执行的指令。
+ * 领导人把这条指令作为一条新的日志条目附加到日志中去，然后并行的发起附加条目 RPCs 给其他的服务器，让他们复制这条日志条目。
+ * 当这条日志条目被安全的复制（下面会介绍），领导人会应用这条日志条目到它的状态机中然后把执行的结果返回给客户端。
+ * 如果跟随者崩溃或者运行缓慢，再或者网络丢包，
+ *  领导人会不断的重复尝试附加日志条目 RPCs （尽管已经回复了客户端）直到所有的跟随者都最终存储了所有的日志条目。
+ */
+func (node *DefaultNode) handlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
+	fmt.Println("handlerClientRequest handler {} operation,  and key : [{}], value : [{}]", request)
+
+	//如果当前节点不是leader则把请求转发到leader处理
+	if node.status != command.LEADER {
+		fmt.Printf(" warning I not am leader , only invoke redirect method, leader addr : %s, my addr : %s",
+			node.peerset.GetLeader().GetAddr(), node.peerset.GetSelf().GetAddr())
+		return node.redirect(request)
+	}
+
+	//如果用户的请求是获取raft 日志则直接从状态机获取返回
+	if request.GetReqType() == raft_client.GET {
+		logEntry := node.stateMachine.Get(request.GetKey())
+		if logEntry != nil {
+			return raft_client.NewClientKVAck().Ojbect(logEntry.GetCommand())
+		}
+		return raft_client.NewClientKVAck().Ojbect(nil)
+	}
+
+	//创建日志
+	logentryBuilder := &entry.LogEntryBuilder{}
+	logentry := logentryBuilder.Term(node.currentTerm).
+		Command(entry.NewCommand().SetKey(request.GetKey()).SetValue(request.GetValue())).LogEntryBuild()
+
+	node.logModule.Write(logentry)
+
 	return nil
 }

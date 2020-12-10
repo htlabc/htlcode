@@ -5,9 +5,9 @@ import (
 )
 
 type StateMachine interface {
-	Apply(bucket string, LogEntry entry.LogEntry)
-	Get(bucket string, key string) entry.LogEntry
-	GetString(bucket string, key string) string
-	SetString(bucket string, key string, value string)
+	Apply(LogEntry *entry.LogEntry)
+	Get(key string) *entry.LogEntry
+	GetString(key string) string
+	SetString(key string, value string)
 	DelString(key ...string)
 }

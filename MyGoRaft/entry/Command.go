@@ -5,12 +5,18 @@ type Command struct {
 	value string
 }
 
-func (c *Command) SetKey(key string) {
-	c.key = key
+func NewCommand() *Command {
+	return &Command{}
 }
 
-func (c *Command) SetValue(value string) {
+func (c *Command) SetKey(key string) *Command {
+	c.key = key
+	return c
+}
+
+func (c *Command) SetValue(value string) *Command {
 	c.value = value
+	return c
 }
 
 func (c *Command) GetKey() string {
@@ -19,8 +25,4 @@ func (c *Command) GetKey() string {
 
 func (c *Command) GetValue() string {
 	return c.value
-}
-
-func Build(key string, value string) *Command {
-	return &Command{key: key, value: value}
 }
