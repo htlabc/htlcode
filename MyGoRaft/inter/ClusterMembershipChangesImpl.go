@@ -20,7 +20,7 @@ type ClusterMembershipChangesImpl struct {
 func (c *ClusterMembershipChangesImpl) AddPeer(newPeer *command.Peer) *memchange.ClusterMemberChageResult {
 	//检查新添加的peer是否已经存在集群内
 	set := c.node.GetPeerSet()
-	for x := set.GetPeers().Front(); x != nil; x.Next() {
+	for x := set.GetPeers().Front(); x != nil; x = x.Next() {
 		peer := x.Value.(command.Peer)
 		if peer.GetAddr() == newPeer.GetAddr() {
 			return nil
@@ -36,7 +36,7 @@ func (c *ClusterMembershipChangesImpl) AddPeer(newPeer *command.Peer) *memchange
 
 		l := c.node.GetPeerSet().GetPeersWithOutSelf()
 
-		for peer := l.Front(); peer.Value != nil; peer.Next() {
+		for peer := l.Front(); peer.Value != nil; peer = peer.Next() {
 			request := rpc.NewRequest().SetCmd(rpc.CHANGE_CONFIG_ADD).SetObj(newPeer).SetUrl(newPeer.GetAddr())
 			response := c.node.RpcClient.Send(*request)
 			result := response.GetResult().(*memchange.ClusterMemberChageResult)
@@ -59,7 +59,7 @@ func (c *ClusterMembershipChangesImpl) RemovePeer(oldPeer *command.Peer) *memcha
 		delete(c.node.GetMatchedIndexes(), *oldPeer)
 		delete(c.node.GetNextIndexes(), *oldPeer)
 		l := c.node.GetPeerSet().GetPeersWithOutSelf()
-		for peer := l.Front(); peer.Value != nil; peer.Next() {
+		for peer := l.Front(); peer.Value != nil; peer = peer.Next() {
 			request := rpc.NewRequest().SetCmd(rpc.CHANGE_CONFIG_REMOVE).SetObj(oldPeer).SetUrl(oldPeer.GetAddr())
 			response := c.node.RpcClient.Send(*request)
 			result := response.GetResult().(*memchange.ClusterMemberChageResult)

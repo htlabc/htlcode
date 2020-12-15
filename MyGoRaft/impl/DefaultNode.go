@@ -124,7 +124,7 @@ func (h *HeartBeatTask) HeartBeatTask() {
 	h.node.preHeartBeatTime = time.Now()
 	fmt.Println("nextindex %s", h.node.nextIndexes[*h.node.peerset.GetSelf()])
 
-	for x := h.node.peerset.GetPeersWithOutSelf().Front(); x.Value != nil; x.Next() {
+	for x := h.node.peerset.GetPeersWithOutSelf().Front(); x.Value != nil; x = x.Next() {
 		p := x.Value.(command.Peer)
 		//设置发送给其他节点的心跳信息
 		builder := entry.Newbuilder().Entries(nil).ServerId(p.GetAddr()).LeaderId(p.GetAddr())
@@ -196,7 +196,6 @@ func (node *DefaultNode) ElectionTask() {
 			}
 			futureArray = append(futureArray, t)
 			var succeed int64
-
 			wg := &sync.WaitGroup{}
 			wg.Add(len(futureArray))
 			for _, futrue := range futureArray {
@@ -244,7 +243,7 @@ func (node *DefaultNode) becomeLeaderToDoThing() {
 	node.nextIndexes = make(map[command.Peer]int64)
 	node.matchIndexes = make(map[command.Peer]int64)
 
-	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer.Next() {
+	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer = peer.Next() {
 		node.nextIndexes[peer.Value.(command.Peer)] = (node.LogModule.GetLastIndex() + 1)
 		node.matchIndexes[peer.Value.(command.Peer)] = 0
 	}
@@ -302,7 +301,7 @@ func (node *DefaultNode) HandlerClientRequest(request raft_client.ClientKVReq) *
 	fmt.Printf("write logModule success, logEntry info : %s, log index : %v", logentry, logentry.GetIndex())
 	writeTasksArrys := make([]*channs.ChannelTask, 0)
 	var count int = 0
-	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer.Next() {
+	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer = peer.Next() {
 		writeTasksArrys = append(writeTasksArrys, node.Replication(peer.Value.(command.Peer), logentry))
 		count++
 	}
