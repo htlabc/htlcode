@@ -23,3 +23,7 @@ func (cmcr *ClusterMemberChageResult) LEADERHINT(val string) *ClusterMemberChage
 	cmcr.leaderHint = val
 	return cmcr
 }
+
+func (cmcr *ClusterMemberChageResult) GetStatus() int {
+	return cmcr.status
+}

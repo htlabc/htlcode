@@ -63,7 +63,7 @@ func (rpc *DefaultRpcServer) HandlerRequest(request Request, response *Response)
 		response.SetResult(rpc.Node.HandlerRequestVote(r))
 		return nil
 	} else if request.GetCmd() == A_ENTRIS {
-		r := request.GetObj().(entry.AppendEntryParam)
+		r := request.GetObj().(*entry.AppendEntryParam)
 		response.SetResult(rpc.Node.HandlerAppendEntries(r))
 		return nil
 	} else if request.GetCmd() == CLIENT_REQ {

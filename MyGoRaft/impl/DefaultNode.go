@@ -35,11 +35,11 @@ type DefaultNode struct {
 	//当前获得选票的候选人id
 	voteFor string
 	/** 日志条目集；每一个条目包含一个用户状态机执行的指令，和收到时的任期号 */
-	logModule inter.LogModule
+	LogModule inter.LogModule
 	//已经被提交的日志最大索引值
-	commitIndex uint64
+	commitIndex int64
 	//最后被应用到状态机的日志条目（初始化0 持续递增）
-	lastApplied int
+	lastApplied int64
 	//对于每个服务器需要发送给它的下一条日志的索引号，初始化的时候领导人的值需要+1
 	nextIndexes map[command.Peer]int64
 	//对于follower服务器已经复制给他的日志最大索引值
@@ -67,20 +67,36 @@ type DefaultNode struct {
 	raftchannelpool channs.RaftChannelPool
 }
 
-func (node *DefaultNode) HandlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult {
-	return nil
+func (node *DefaultNode) GetPeerSet() *command.PeerSet {
+	return node.GetPeerSet()
 }
 
-func (node *DefaultNode) HandlerClientRequest(param raft_client.ClientKVReq) *raft_client.ClientKVAck {
-	return nil
+func (node *DefaultNode) GetNodeStatus() int {
+	return node.status
 }
 
-func (node *DefaultNode) AddPeers(newPeer command.Peer) memchange.ClusterMemberChageResult {
-	return node.clustememshipchanges.AddPeer(newPeer)
+func (node *DefaultNode) GetNextIndexes() map[command.Peer]int64 {
+	return node.nextIndexes
 }
 
-func (node *DefaultNode) RemovePeers(oldPeer command.Peer) memchange.ClusterMemberChageResult {
-	return node.clustememshipchanges.RemovePeer(oldPeer)
+func (node *DefaultNode) GetMatchedIndexes() map[command.Peer]int64 {
+	return node.matchIndexes
+}
+
+func (node *DefaultNode) HandlerAppendEntries(param *entry.AppendEntryParam) *entry.AppendEntryResult {
+	if param != nil {
+		fmt.Printf("node receive node %s append entry, entry content = %s", param.GetLeaderId(), param.GetEntries())
+	}
+	result := node.consensus.AppendEntries(param)
+	return result
+}
+
+func (node *DefaultNode) AddPeers(newPeer command.Peer) *memchange.ClusterMemberChageResult {
+	return node.clustememshipchanges.AddPeer(&newPeer)
+}
+
+func (node *DefaultNode) RemovePeers(oldPeer command.Peer) *memchange.ClusterMemberChageResult {
+	return node.clustememshipchanges.RemovePeer(&oldPeer)
 }
 
 func (node *DefaultNode) HandlerRequestVote(param vote.RvoteParam) *entry.RvoteResult {
@@ -165,14 +181,14 @@ func (node *DefaultNode) ElectionTask() {
 			t := &channs.ChannelTask{
 				Callable: channs.NewCallable(func() (interface{}, error) {
 					lastTerm := int64(0)
-					lastLogEntry := node.logModule.GetLast()
+					lastLogEntry := node.LogModule.GetLast()
 					//获取最后一个日志的任期
 					if lastLogEntry != nil {
 						lastTerm = int64(lastLogEntry.GetTerm())
 					}
 					//创建投票参数以及请求
 					voteParam := vote.NewRvoteParam().SetTerm(node.currentTerm).SetCandidateId(node.peerset.GetSelf().GetAddr()).
-						SetLastLogIndex(node.logModule.GetLastIndex()).SetLastLogTerm(lastTerm)
+						SetLastLogIndex(node.LogModule.GetLastIndex()).SetLastLogTerm(lastTerm)
 					request := rpc.NewRequest().SetCmd(rpc.R_VOTE).SetObj(voteParam).SetUrl(peer.GetAddr())
 					response := node.RpcClient.Send(*request)
 					return response, nil
@@ -229,20 +245,20 @@ func (node *DefaultNode) becomeLeaderToDoThing() {
 	node.matchIndexes = make(map[command.Peer]int64)
 
 	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer.Next() {
-		node.nextIndexes[peer.Value.(command.Peer)] = (node.logModule.GetLastIndex() + 1)
+		node.nextIndexes[peer.Value.(command.Peer)] = (node.LogModule.GetLastIndex() + 1)
 		node.matchIndexes[peer.Value.(command.Peer)] = 0
 	}
 }
 
-func (node *DefaultNode) handlerRequestVote(vote vote.RvoteParam) *entry.RvoteResult {
+func (node *DefaultNode) handlerRequestVote(vote *vote.RvoteParam) *entry.RvoteResult {
 	fmt.Println("handlerRequestVote will be invoke, param info : {}", vote)
 	response := node.consensus.RequestVote(vote)
-	return &response
+	return response
 }
-func (node *DefaultNode) handlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult {
+func (node *DefaultNode) handlerAppendEntries(param *entry.AppendEntryParam) *entry.AppendEntryResult {
 	fmt.Println("handlerAppendEntries will be invoke, param info : {}", param)
 	response := node.consensus.AppendEntries(param)
-	return &response
+	return response
 }
 
 func (node *DefaultNode) redirect(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
@@ -258,7 +274,7 @@ func (node *DefaultNode) redirect(request raft_client.ClientKVReq) *raft_client.
  * 如果跟随者崩溃或者运行缓慢，再或者网络丢包，
  *  领导人会不断的重复尝试附加日志条目 RPCs （尽管已经回复了客户端）直到所有的跟随者都最终存储了所有的日志条目。
  */
-func (node *DefaultNode) handlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
+func (node *DefaultNode) HandlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck {
 	fmt.Println("handlerClientRequest handler {} operation,  and key : [{}], value : [{}]", request)
 
 	//如果当前节点不是leader则把请求转发到leader处理
@@ -281,8 +297,125 @@ func (node *DefaultNode) handlerClientRequest(request raft_client.ClientKVReq) *
 	logentryBuilder := &entry.LogEntryBuilder{}
 	logentry := logentryBuilder.Term(node.currentTerm).
 		Command(entry.NewCommand().SetKey(request.GetKey()).SetValue(request.GetValue())).LogEntryBuild()
+	// 预提交到本地日志,
+	node.LogModule.Write(logentry)
+	fmt.Printf("write logModule success, logEntry info : %s, log index : %v", logentry, logentry.GetIndex())
+	writeTasksArrys := make([]*channs.ChannelTask, 0)
+	var count int = 0
+	for peer := node.peerset.GetPeersWithOutSelf().Front(); peer != nil; peer.Next() {
+		writeTasksArrys = append(writeTasksArrys, node.Replication(peer.Value.(command.Peer), logentry))
+		count++
+	}
 
-	node.logModule.Write(logentry)
+	node.raftchannelpool.TaskPool = append(node.raftchannelpool.TaskPool, writeTasksArrys...)
+	var success int64 = 0
+	//异步返回结果统计执行成功的次数
+	for _, task := range writeTasksArrys {
+		result := node.raftchannelpool.Get(*task)
+		if result.GetResult().(bool) {
+			atomic.AddInt64(&success, 1)
+		}
+	}
 
-	return nil
+	// 如果存在一个满足N > commitIndex的 N，并且大多数的matchIndex[i] ≥ N成立，
+	// 并且log[N].term == currentTerm成立，那么令 commitIndex 等于这个 N （5.3 和 5.4 节）
+
+	matchIndexesList := make([]int64, 0)
+	for _, value := range node.matchIndexes {
+		matchIndexesList = append(matchIndexesList, value)
+	}
+
+	middle := 0
+	if len(matchIndexesList) >= 2 {
+		middle = len(matchIndexesList) / 2
+	}
+
+	num := matchIndexesList[middle]
+
+	if num > node.commitIndex {
+		log := node.LogModule.Read(num)
+		if log != nil && log.GetTerm() == node.currentTerm {
+			node.commitIndex = num
+		}
+	}
+
+	if int(success) >= count/2 {
+		node.commitIndex = logentry.GetIndex()
+		node.stateMachine.Apply(logentry)
+		node.lastApplied = node.commitIndex
+		fmt.Printf("success apply local state machine,  logEntry info : %s", logentry)
+		return raft_client.NewClientKVAck().Ok()
+	} else {
+		node.LogModule.RemoveOnstartIndex(logentry.GetIndex())
+		fmt.Printf("fail apply local state  machine,  logEntry info : %s", logentry)
+		return raft_client.NewClientKVAck().Fail()
+	}
+}
+
+//leader 把日志复制到其他node节点
+func (node *DefaultNode) Replication(peer command.Peer, logentry *entry.LogEntry) *channs.ChannelTask {
+	callable := channs.NewCallable(
+		func() (interface{}, error) {
+			var start, end time.Time = time.Now(), time.Now()
+			for !end.After(start.Add(time.Duration(time.Duration(20 * time.Millisecond)))) {
+
+				param := entry.Newbuilder().Term(node.currentTerm).
+					ServerId(peer.GetAddr()).
+					LeaderId(node.peerset.GetSelf().GetAddr()).Leadercommit(node.commitIndex)
+
+				// 以我这边为准, 这个行为通常是成为 leader 后,首次进行 RPC 才有意义.
+				nextindex := node.nextIndexes[peer]
+				listLogEntry := make([]entry.LogEntry, 0)
+				if logentry.GetIndex() >= nextindex {
+					for i := nextindex; i <= logentry.GetIndex(); i++ {
+						l := node.LogModule.Read(i)
+						if l != nil {
+							listLogEntry = append(listLogEntry, *l)
+						}
+					}
+				} else {
+					listLogEntry = append(listLogEntry, *logentry)
+				}
+
+				preLog := listLogEntry[0]
+				param.PreLogTerm(preLog.GetTerm())
+				param.PreLogIndex(preLog.GetIndex())
+				param.Entries(listLogEntry)
+
+				AppendEntryParam := entry.NewAppendEntryParam(param)
+
+				request := rpc.NewRequest().SetCmd(rpc.A_ENTRIS).SetObj(AppendEntryParam).SetUrl(peer.GetAddr())
+				response := node.RpcClient.Send(*request)
+				if response == nil {
+					return false, nil
+				}
+
+				result := response.GetResult().(*entry.AppendEntryResult)
+				if result != nil && result.GetStatus() {
+					fmt.Printf("append follower entry success , follower=%s, entry=%s", peer, AppendEntryParam.GetEntries())
+					node.nextIndexes[peer] = logentry.GetIndex() + 1
+					node.matchIndexes[peer] = logentry.GetIndex()
+					return true, nil
+				} else if result != nil {
+					if result.GetTerm() > node.currentTerm {
+
+						fmt.Printf("follower %s term %d than more self, and my term = [{}], so, I will become follower",
+							peer, result.GetTerm(), node.currentTerm)
+						node.currentTerm = result.GetTerm()
+						// 认怂, 变成跟随者
+						node.status = command.FOLLOWER
+						return false, nil
+					} else {
+						node.nextIndexes[peer] = nextindex - 1
+					}
+				}
+				end = time.Now()
+			}
+			return false, nil
+		},
+		context.Background(),
+	)
+
+	c := &channs.ChannelTask{Runnable: nil, Callable: callable}
+	return c
 }

@@ -5,17 +5,25 @@ type AppendEntryParam struct {
 	//领导人id
 	leaderId string
 	//新日志的任期号
-	term uint64
+	term int64
 	//服务器id
 	serverId string
 	//新日志的上一条日志
-	preLogIndex uint64
+	preLogIndex int64
 	//新日志的上一条日志的任期号
-	preLogTerm uint64
+	preLogTerm int64
 	//raft 日志集合
 	entries []LogEntry
 	//领导人已经提交的日志索引值
-	leaderCommit uint64
+	leaderCommit int64
+}
+
+func (a *AppendEntryParam) GetEntries() []LogEntry {
+	return a.entries
+}
+
+func (a *AppendEntryParam) GetLeaderId() string {
+	return a.leaderId
 }
 
 func NewAppendEntryParam(b *builder) *AppendEntryParam {
@@ -43,16 +51,16 @@ type builder struct {
 	//private LogEntry[] entries;
 	//private long leaderCommit;
 
-	term         uint64
+	term         int64
 	serverId     string
 	leaderid     string
-	preLogIndex  uint64
-	preLogTerm   uint64
-	leaderCommit uint64
+	preLogIndex  int64
+	preLogTerm   int64
+	leaderCommit int64
 	entries      []LogEntry
 }
 
-func (b *builder) Term(val uint64) *builder {
+func (b *builder) Term(val int64) *builder {
 	b.term = val
 	return b
 }
@@ -62,7 +70,7 @@ func (b *builder) LeaderId(val string) *builder {
 	return b
 }
 
-func (b *builder) Leadercommit(val uint64) *builder {
+func (b *builder) Leadercommit(val int64) *builder {
 	b.leaderCommit = val
 	return b
 }
@@ -72,13 +80,18 @@ func (b *builder) ServerId(val string) *builder {
 	return b
 }
 
-func (b *builder) PreLogIndex(val uint64) *builder {
+func (b *builder) PreLogIndex(val int64) *builder {
 	b.preLogIndex = val
 	return b
 }
 
-func (b *builder) LogTerm(val uint64) *builder {
+func (b *builder) PreLogTerm(val int64) *builder {
 	b.preLogTerm = val
+	return b
+}
+
+func (b *builder) LogTerm(val int64) *builder {
+	b.term = val
 	return b
 }
 

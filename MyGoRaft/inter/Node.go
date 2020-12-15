@@ -7,8 +7,8 @@ import (
 )
 
 type Node interface {
-	handlerRequestVote(vote vote.RvoteParam) *entry.RvoteResult
-	handlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult
-	handlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck
-	redirect(request raft_client.ClientKVReq) *raft_client.ClientKVAck
+	HandlerRequestVote(vote vote.RvoteParam) *entry.RvoteResult
+	HandlerAppendEntries(param entry.AppendEntryParam) *entry.AppendEntryResult
+	HandlerClientRequest(request raft_client.ClientKVReq) *raft_client.ClientKVAck
+	Redirect(request raft_client.ClientKVReq) *raft_client.ClientKVAck
 }
