@@ -17,6 +17,10 @@ import (
 	"time"
 )
 
+var (
+	Instance *DefaultNode
+)
+
 type DefaultNode struct {
 	//选举时间间隔
 	electionSpanTime int64
@@ -64,7 +68,20 @@ type DefaultNode struct {
 	//
 	//
 	//inter.Node
-	raftchannelpool channs.RaftChannelPool
+	raftchannelpool  channs.RaftChannelPool
+	SynchronizedLock sync.Mutex
+}
+
+func GetInstance() *DefaultNode {
+	if Instance != nil {
+		return Instance
+	} else {
+		return &DefaultNode{}
+	}
+}
+
+func (node *DefaultNode) SetNodeConfig(config command.NodeConfig) {
+	node.config = config
 }
 
 func (node *DefaultNode) GetPeerSet() *command.PeerSet {
@@ -81,6 +98,31 @@ func (node *DefaultNode) GetNextIndexes() map[command.Peer]int64 {
 
 func (node *DefaultNode) GetMatchedIndexes() map[command.Peer]int64 {
 	return node.matchIndexes
+}
+
+func (node *DefaultNode) Init() {
+
+	if node.started {
+		return
+	}
+	node.SynchronizedLock.Lock()
+	defer node.SynchronizedLock.Unlock()
+
+	stopchan := make(chan struct{}, 0)
+	node.RpcServer.Start(stopchan)
+	node.consensus = NewDefaultConsenus()
+	node.LogModule = NewDefaultLogModule()
+	node.stateMachine = NewDefaultStateMachine()
+
+	node.newElectionScheduler(6 * time.Second)
+	node.newHeartBeatScheduler(500 * time.Millisecond)
+	logentry := node.LogModule.GetLast()
+	if logentry != nil {
+		node.currentTerm = logentry.GetTerm()
+	}
+
+	node.started = true
+	fmt.Printf("raft server start success selfid %s", node.peerset.GetSelf())
 }
 
 func (node *DefaultNode) HandlerAppendEntries(param *entry.AppendEntryParam) *entry.AppendEntryResult {
@@ -104,27 +146,46 @@ func (node *DefaultNode) HandlerRequestVote(param vote.RvoteParam) *entry.RvoteR
 	return nil
 }
 
-type HeartBeatTask struct {
-	tick time.Ticker
-	node DefaultNode
+func (node *DefaultNode) newHeartBeatScheduler(duration time.Duration) {
+	tick := time.NewTicker(duration)
+	go func() {
+		for {
+			select {
+			case <-tick.C:
+				node.HeartBeat()
+			}
+		}
+	}()
+}
+
+func (node *DefaultNode) newElectionScheduler(duration time.Duration) {
+	tick := time.NewTicker(duration)
+	go func() {
+		for {
+			select {
+			case <-tick.C:
+				node.Election()
+			}
+		}
+	}()
 }
 
 //raft节点的心跳实现
-func (h *HeartBeatTask) HeartBeatTask() {
-	if h.node.status != command.LEADER {
+func (node *DefaultNode) HeartBeat() {
+	if node.status != command.LEADER {
 		return
 	}
 
 	currentTime := time.Now()
 
-	if int64(currentTime.Sub(h.node.preHeartBeatTime)) < h.node.heartBeatTick {
+	if int64(currentTime.Sub(node.preHeartBeatTime)) < node.heartBeatTick {
 		return
 	}
 
-	h.node.preHeartBeatTime = time.Now()
-	fmt.Println("nextindex %s", h.node.nextIndexes[*h.node.peerset.GetSelf()])
+	node.preHeartBeatTime = time.Now()
+	fmt.Println("nextindex %s", node.nextIndexes[*node.peerset.GetSelf()])
 
-	for x := h.node.peerset.GetPeersWithOutSelf().Front(); x.Value != nil; x = x.Next() {
+	for x := node.peerset.GetPeersWithOutSelf().Front(); x.Value != nil; x = x.Next() {
 		p := x.Value.(command.Peer)
 		//设置发送给其他节点的心跳信息
 		builder := entry.Newbuilder().Entries(nil).ServerId(p.GetAddr()).LeaderId(p.GetAddr())
@@ -135,24 +196,24 @@ func (h *HeartBeatTask) HeartBeatTask() {
 		request.SetObj(param)
 		request.SetUrl(p.GetAddr())
 		channs.NewRunnable(func() error {
-			response := h.node.RpcClient.Send(*request)
+			response := node.RpcClient.Send(*request)
 			result := response.GetResult().(entry.AppendEntryResult)
 			term := result.GetTerm()
-			if term > h.node.currentTerm {
-				fmt.Errorf("self will become follower, he's term : {}, my term : {}", term, h.node.currentTerm)
-				h.node.currentTerm = term
-				h.node.voteFor = ""
-				h.node.status = command.FOLLOWER
+			if term > node.currentTerm {
+				fmt.Errorf("self will become follower, he's term : {}, my term : {}", term, node.currentTerm)
+				node.currentTerm = term
+				node.voteFor = ""
+				node.status = command.FOLLOWER
 			}
 			return nil
 		})
-		h.node.raftchannelpool.TaskPool = append(h.node.raftchannelpool.TaskPool)
+		node.raftchannelpool.TaskPool = append(node.raftchannelpool.TaskPool)
 	}
 
 }
 
 //raft节点投票选举
-func (node *DefaultNode) ElectionTask() {
+func (node *DefaultNode) Election() {
 
 	task := &channs.ChannelTask{}
 	task.Runnable.Runnablefunc = func() error {

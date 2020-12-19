@@ -5,12 +5,18 @@ type RvoteResult struct {
 	voteGranted bool
 }
 
-func (r *RvoteResult) SetTerm(val int64) {
-	r.term = val
+func NewRvoteResult() *RvoteResult {
+	return &RvoteResult{}
 }
 
-func (r *RvoteResult) SetVoteGranted(val bool) {
+func (r *RvoteResult) SetTerm(val int64) *RvoteResult {
+	r.term = val
+	return r
+}
+
+func (r *RvoteResult) SetVoteGranted(val bool) *RvoteResult {
 	r.voteGranted = val
+	return r
 }
 
 func (r *RvoteResult) Term() int64 {

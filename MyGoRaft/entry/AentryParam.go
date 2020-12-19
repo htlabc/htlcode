@@ -26,6 +26,22 @@ func (a *AppendEntryParam) GetLeaderId() string {
 	return a.leaderId
 }
 
+func (a *AppendEntryParam) GetTerm() int64 {
+	return a.term
+}
+
+func (a *AppendEntryParam) GetPreLogIndex() int64 {
+	return a.preLogIndex
+}
+
+func (a *AppendEntryParam) GetPreLogTerm() int64 {
+	return a.preLogTerm
+}
+
+func (a *AppendEntryParam) GetLeaderCommit() int64 {
+	return a.leaderCommit
+}
+
 func NewAppendEntryParam(b *builder) *AppendEntryParam {
 	p := &AppendEntryParam{}
 	p.term = b.term
