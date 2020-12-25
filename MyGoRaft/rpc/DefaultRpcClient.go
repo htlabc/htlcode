@@ -23,8 +23,11 @@ func (d *DefaultRpcClient) Send(r Request) *Response {
 		log.Fatalln()
 	}
 	var res Response
-	err = conn.Call("DefaultRPCServer.HandleRaftRequest", req, &res)
+	err = conn.Call("DefaultRPCServer.HandleRaftRequest", r, &res)
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	return &res
+
 }

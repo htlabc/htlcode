@@ -141,9 +141,10 @@ func (node *DefaultNode) RemovePeers(oldPeer command.Peer) *memchange.ClusterMem
 	return node.clustememshipchanges.RemovePeer(&oldPeer)
 }
 
-func (node *DefaultNode) HandlerRequestVote(param vote.RvoteParam) *entry.RvoteResult {
-	fmt.Printf("handlerRequestVote will be invoke, param info : %s", param)
-	return nil
+func (node *DefaultNode) HandlerRequestVote(vote *vote.RvoteParam) *entry.RvoteResult {
+	fmt.Println("handlerRequestVote will be invoke, param info : {}", vote)
+	response := node.consensus.RequestVote(vote)
+	return response
 }
 
 func (node *DefaultNode) newHeartBeatScheduler(duration time.Duration) {

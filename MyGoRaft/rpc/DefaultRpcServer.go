@@ -57,10 +57,9 @@ func (d *DefaultRpcServer) Stop(stopchan <-chan struct{}) error {
 }
 
 func (rpc *DefaultRpcServer) HandlerRequest(request Request, response *Response) error {
-
 	if request.GetCmd() == R_VOTE {
 		r := request.GetObj().(vote.RvoteParam)
-		response.SetResult(rpc.Node.HandlerRequestVote(r))
+		response.SetResult(rpc.Node.HandlerRequestVote(&r))
 		return nil
 	} else if request.GetCmd() == A_ENTRIS {
 		r := request.GetObj().(*entry.AppendEntryParam)
